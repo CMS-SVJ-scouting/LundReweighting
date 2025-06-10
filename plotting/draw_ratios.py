@@ -66,7 +66,7 @@ out_dir = options.outdir
 if(not os.path.exists(out_dir)): os.system("mkdir " + out_dir)
 setTDRStyle()
 
-fnames = ["data/ratio_2018.root", "data/ratio_2017.root", "data/ratio_2016.root"]
+fnames = ["../data/ratio_2018.root", "../data/ratio_2017.root", "../data/ratio_2016.root"]
 #fnames = ["plots/top_RW_2018_june12/ratio.root", "plots/top_RW_2017_june12/ratio.root", "plots/top_RW_2016_june12/ratio.root"]
 weights = [59.74, 41.4, 35.9]
 
