@@ -299,8 +299,6 @@ class LundReweighter():
                                 pf = find_matching_pf(pfs_cut, c)
                                 if(pf is None):
                                     print("NO match!")
-                                    print(c)
-                                    print(pfs)
                                     exit(1)
                                 #4th entry is PUPPI weight, 5th entry is charge of PFCand
                                 eps = 1e-4
@@ -396,8 +394,6 @@ class LundReweighter():
         subjets_reshape = np.array(subjets).reshape(-1)
 
         filled = []
-        #print("splittings", splittings)
-        #print("subjet match", subjet_match)
         for subjet_i, subjet_pt, order, delta, kt in splittings:
             if((subjet_idx >= 0 and subjet_i != subjet_idx) or not subjet_match[subjet_i] ): continue
             if(delta > 0. and kt > 0.):
@@ -636,7 +632,6 @@ class LundReweighter():
 
 
         nEvts = len(pf_cands)
-
         #dict for all the outputs
         out = self.init_weight_dict(nEvts, nToys)
 
@@ -679,7 +674,7 @@ class LundReweighter():
         if(distortion_sys):
             h_dummy = self.h_mc.Clone("h_dummy")
             h_dummy.Reset()
-            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=True)
+            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=False)
             cleanup_ratio(h_distortion_ratio, h_min=0.2, h_max = 5.0)
 
         for i in range(len(out['reclust_nom'])):
@@ -705,8 +700,7 @@ class LundReweighter():
                 out['unclust_up'][i] *= unclust_factor
                 out['unclust_down'][i] /= unclust_factor
 
-
-
+                
             for sj in reclust_nom.subjet: out['subjet_pts'].append(sj[0])
 
             #compute systematic due to distorted LP 
@@ -750,7 +744,7 @@ class LundReweighter():
                 out['bquark_up'][i] = out['nom'][i]* b_rw
                 out['bquark_down'][i] = out['nom'][i]/b_rw
 
-
+        
         if(normalize):
             nom_noNorm = None
             for key in out.keys():
@@ -836,11 +830,6 @@ class LundReweighter():
     def make_LP_ratio(self, h_data, h_bkg, h_mc,  h_data_subjet_pt = None, h_bkg_subjet_pt = None, h_mc_subjet_pt = None, pt_bins = None, outdir = "", save_plots = False):
         """ Function to construct data/MC LP ratio"""
 
-
-        #h_data.Print()
-        #h_bkg.Print()
-        #h_mc.Print()
-
         do_jet_pt_norm  = (h_data_subjet_pt is not None) and (h_mc_subjet_pt is not None) and (h_bkg_subjet_pt is not None)
 
         cleanup_hist(h_mc)
@@ -894,7 +883,6 @@ class LundReweighter():
 
 
         for i in range(1, h_data.GetNbinsX() + 1):
-            print("Bin " + str(i) + " Low Edge: ", h_data.GetXaxis().GetBinLowEdge(i))
             h_bkg_clone1 = h_bkg_clone.Clone("h_bkg_clone%i" %i)
             h_mc_clone1 = h_mc_clone.Clone("h_mc_clone%i"% i)
             h_data_clone1 = h_data_sub.Clone("h_data_clone%i" %i)
@@ -1023,33 +1011,32 @@ class LundReweighter():
         Done separately for jets of different number of prongs, so not biased
         Also clip outlier weights so to not be dominated by statistical fluctuations. """
 
-        n_prongs = nProngs
+        n_prongs = ak.flatten(nProngs)
+        
         #combine lund_weights into a per-jet situation, not a per darkHadron jet situation
+        #Oz's code returns a list of weights "per list of input particles" which is assumed to be a list of particles per jet.
+        # ours was a list of particles per dark hadron - now combine the weights into a per-jet weight
         new_lund_weights = None
         j = 1
+
+        # if there are no dark hadrons in a jet (aka nd = [])
+        # should we just skip it? then we don't have a placeholder for that jet
+        # which is maybe fine, but maybe not?
+        nDark = ak.flatten(nDark)
         if (len(lund_weights.shape) == 1):
-            new_lund_weights = np.ones(len(nDark))
-            for i,nd in enumerate(nDark):
-                for w in lund_weights[j-1:j-1+nd]:
-                    new_lund_weights[i] = new_lund_weights[i] * w
-                j += nd
+            lund_weights = ak.unflatten(lund_weights, nDark)
+            new_lund_weights = ak.to_numpy(ak.prod(lund_weights, axis=1))
         else:
             new_lund_weights = np.ones((len(nDark), lund_weights.shape[1]))
-            for i,nd in enumerate(nDark):
-                #print('lwj:jnd :', lund_weights[j-1:j-1+nd])
-                for nw,w in enumerate(lund_weights[j-1:j-1+nd]):
-                    for nl, l in enumerate(w):
-                        new_lund_weights[i][nl] = new_lund_weights[i][nl] * lund_weights[j-1+nw][nl]
-
-                j += nd
+            for i in range(lund_weights.shape[1]):
+                nlw = ak.unflatten(lund_weights[:,i], nDark)
+                new_lund_weights[:,i] = ak.to_numpy(ak.prod(nlw, axis=1))                                     
 
         unnormalized_lund_weights = new_lund_weights.copy()
         #separate norm per each number of prongs (so dist is not biased)
         if(n_prongs is None): n_prongs = np.ones_like(lund_weights, dtype=np.int32)
         max_prongs = int(round(np.amax(n_prongs)))
 
-        # print("n_prongs", np.sum(n_prongs==None))
-        # print("ak8pt", np.sum(ak8_pts==None))
         for n in range(1, max_prongs+1):
             mask = (n_prongs == n)
             weights = new_lund_weights[mask]
