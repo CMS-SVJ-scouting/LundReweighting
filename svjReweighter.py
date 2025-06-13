@@ -12,7 +12,7 @@ import fastjet
 import sys, os
 sys.path.insert(0, '')
 sys.path.append("../")
-from utils.Utils import *
+from lund_utils.Utils import *
 import math
 
 def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet, nevts_tot):
@@ -28,7 +28,7 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
     LP_weights_pt_var = np.zeros((nevts_batch, nToys))
     LP_weights_sys_var = np.zeros((nevts_batch, nSys))
     
-    f_ratio_current = ROOT.TFile.Open("data/ratio_"+str(year)+".root")
+    f_ratio_current = ROOT.TFile.Open("../LundReweighting/data/ratio_"+str(year)+".root")
     
     LP_rws = LundReweighter( f_ratio = f_ratio_current )
     
@@ -42,7 +42,7 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
 
     return out
 
-def calculate_lund_reweighting(events, mc_year):
+def calculate_lund_weights(events, mc_year):
     
     # number of events in current sample
     nevts_tot = ak.size(events["EvtNum"])
