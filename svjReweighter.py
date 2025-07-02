@@ -106,8 +106,21 @@ def calculate_lund_weights(events, mc_year):
     
     for k in output.keys():
         if k in ['n_prongs', 'subjet_pts', 'bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
-        weights = ak.unflatten(output[k], nJetsPerEvent)
-        event_weights = ak.prod(weights, axis=-1) 
-        events["lundWeight_"+k] = event_weights
+        if k in ["stat_vars", "pt_vars"]:
+            # Unflatten to (nEvents, nJetsPerEvent, nToys)
+            stat_vars = ak.unflatten(output[k], nJetsPerEvent)
+            # Take mean and std over the toys axis (axis=2)
+            weights_up = ak.mean(stat_vars, axis=2) + ak.std(stat_vars, axis=2)
+            weights_down = ak.mean(stat_vars, axis=2) - ak.std(stat_vars, axis=2)
+            event_weights_up = ak.prod(weights_up, axis=-1)
+            event_weights_down = ak.prod(weights_down, axis=-1)
+            k = k.capitalize()
+            events[f"lundWeight{k.replace('_vars', '')}Up"] = event_weights_up
+            events[f"lundWeight{k.replace('_vars', '')}Down"] = event_weights_down
+        else:
+            weights = ak.unflatten(output[k], nJetsPerEvent)
+            event_weights = ak.prod(weights, axis=-1)
+            k = k.capitalize().replace('up', 'Up').replace('down', 'Down')
+            events["lundWeight"+k.replace('_','')] = event_weights
 
     return events
