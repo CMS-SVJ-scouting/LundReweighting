@@ -8,6 +8,7 @@ from coffea.nanoevents import NanoEventsFactory #, TreeMakerSchema
 import treemaker
 from treemaker import TreeMakerSchema
 import fastjet
+from lund_utils.Utils import get_quantile_axis2
 
 import sys, os
 sys.path.insert(0, '')
@@ -109,9 +110,15 @@ def calculate_lund_weights(events, mc_year):
         if k in ["stat_vars", "pt_vars"]:
             # Unflatten to (nEvents, nJetsPerEvent, nToys)
             stat_vars = ak.unflatten(output[k], nJetsPerEvent)
-            # Take mean and std over the toys axis (axis=2)
-            weights_up = ak.mean(stat_vars, axis=2) + ak.std(stat_vars, axis=2)
-            weights_down = ak.mean(stat_vars, axis=2) - ak.std(stat_vars, axis=2)
+            # Take the 16th and 84th percentiles instead. Awkward does not have a
+            # quantile function, so we have to do it by hand
+            weights_up = get_quantile_axis2(stat_vars, 0.84)
+            weights_down = get_quantile_axis2(stat_vars, 0.16)
+            # Check for and protect against negative weights
+            if ak.any(weights_up < 0) or ak.any(weights_down < 0):
+                print(f"WARNING: Negative weights found in {k}. Clipping to zero.")
+                weights_up = ak.where(weights_up < 0, 0, weights_up)
+                weights_down = ak.where(weights_down < 0, 0, weights_down)
             event_weights_up = ak.prod(weights_up, axis=-1)
             event_weights_down = ak.prod(weights_down, axis=-1)
             k = k.capitalize()
