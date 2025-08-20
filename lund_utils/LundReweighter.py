@@ -9,6 +9,7 @@ import ROOT
 from array import array
 import copy
 import awkward as ak
+import hist
 
 def cleanup_hist(h):
     if(type(h) == ROOT.TH3F):
@@ -91,7 +92,6 @@ def get_subjet_dist(q_eta_phis, subjets_eta_phis):
     return np.sqrt(np.square(subjets_eta_phis[:,:,0] - q_eta_phis[:,:,0]) + 
             np.square(ang_dist(subjets_eta_phis[:,:,1], q_eta_phis[:,:,1] )))
 
-
 class LundReweighter():
 
     def __init__(self, f_ratio = None, jetR = -1, maxJets = -1, pt_extrap_dir = None, pt_extrap_min = 15., pt_extrap_max = 350., pf_pt_min = 0.0, charge_only = False, 
@@ -120,6 +120,7 @@ class LundReweighter():
         if(f_ratio is not None):
             self.h_ratio = f_ratio.Get("ratio_nom")
             self.h_mc = f_ratio.Get("mc_nom")
+            self.h_mc.SetTitle("W Sample Nominal MC")
             #systematic variations
             self.h_ratio_sys_up = f_ratio.Get("ratio_sys_tot_up")
             self.h_ratio_sys_down = f_ratio.Get("ratio_sys_tot_down")
@@ -413,9 +414,6 @@ class LundReweighter():
         """Get LP bin indices  for some splittings"""
         no_idx = (len(subjets) == 1)
         subjets_reshape = np.array(subjets).reshape(-1)
-
-       
-
         idxs = []
 
         binx,biny,binz = array('i', [0]), array('i', [0]), array('i', [0])
@@ -518,9 +516,10 @@ class LundReweighter():
         return rw, smeared_rw, pt_smeared_rw
 
 
-    def reweight(self, h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, rand_noise = None):
+    def reweight(self, h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, sweights, rand_noise = None):
         """Reweight based on directly measured data/MC LP ratio"""
 
+        rws = 1.0
         for (i,j,k) in lp_idxs:
             val = h_rw.GetBinContent(i,j,k)
             err = h_rw.GetBinError(i,j,k)
@@ -531,6 +530,8 @@ class LundReweighter():
                 #print("EMPTY BIN")
 
             val = np.clip(val, self.min_rw, self.max_rw)
+            sweights.append(val)
+            rws *= val
             rw *= val
             #keep pt smearing vals consistent
             if(pt_smeared_rw is not None): pt_smeared_rw *= val
@@ -540,8 +541,7 @@ class LundReweighter():
                 smeared_vals = np.clip(smeared_vals, self.min_rw, self.max_rw)
                 smeared_rw *= smeared_vals
 
-
-        return rw, smeared_rw, pt_smeared_rw
+        return rw, smeared_rw, pt_smeared_rw, rws
 
 
 
@@ -593,13 +593,19 @@ class LundReweighter():
                 'unclust_down': np.zeros((nEvts)),
                 'distortion_up': np.zeros((nEvts)),
                 'distortion_down': np.zeros((nEvts)),
+                'raw_distortion': np.zeros((nEvts)),
                 'n_prongs': np.zeros((nEvts), dtype=np.int32),
                 'subjet_pts': [],
+                'subjet_pts_perDarkHadron': [],
+                'subjet_weights': [],
                 'bad_match': [False,]*nEvts,
                 'reclust_still_bad_match': [False,]*nEvts,
                 'reclust_nom': [],
                 'reclust_prongs_up': [],
                 'reclust_prongs_down': [],
+                'nSplittings': [],
+                'splitting_weights': [],
+                'lp_idxs': []
         }
         return out
 
@@ -666,26 +672,21 @@ class LundReweighter():
             out['reclust_prongs_down'].append(reclust_prongs_down)
 
             if(distortion_sys and not out['bad_match'][i]): self.fill_lund_plane(h_lp_signal, reclust_obj = reclust_nom)
-            #print(i, reclust_nom.n_prongs, reclust_nom.subjet, reclust_nom.split[:5])
             #exit(1)
-
 
         #compute how much signal LP differs from W's MC used to derive correction
         if(distortion_sys):
             h_dummy = self.h_mc.Clone("h_dummy")
             h_dummy.Reset()
-            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=False)
+            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=True, isDistortion=True)
             cleanup_ratio(h_distortion_ratio, h_min=0.2, h_max = 5.0)
 
         for i in range(len(out['reclust_nom'])):
             reclust_nom, reclust_prongs_up, reclust_prongs_down = out['reclust_nom'][i], out['reclust_prongs_up'][i], out['reclust_prongs_down'][i]
 
-
             #Gets the nominal LP reweighting factor for this event and statistical + pt extrapolation toys
-            out['nom'][i], out['stat_vars'][i], out['pt_vars'][i] = self.reweight_lund_plane(h_rw = self.h_ratio,
-                                    reclust_obj = reclust_nom, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise, )
-
-
+            out['nom'][i], out['stat_vars'][i], out['pt_vars'][i], nSplittings,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio,
+                                    reclust_obj = reclust_nom, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise)
             
             out['prongs_up'][i], out['prongs_down'][i]  = self.get_up_down_prongs_weights(h_rw = self.h_ratio, 
                     reclust_prongs_up = reclust_prongs_up, reclust_prongs_down = reclust_prongs_down, nom_weight = out['nom'][i])
@@ -700,21 +701,34 @@ class LundReweighter():
                 out['unclust_up'][i] *= unclust_factor
                 out['unclust_down'][i] /= unclust_factor
 
-                
-            for sj in reclust_nom.subjet: out['subjet_pts'].append(sj[0])
+            subj = []
+            for sj in reclust_nom.subjet:
+                out['subjet_pts'].append(sj[0])
+                subj.append(sj[0])
+            out['subjet_pts_perDarkHadron'].append(subj)
 
-            #compute systematic due to distorted LP 
+            for ns in nSplittings:
+                out['nSplittings'].append(ns)
+
+            #compute systematic due to distorted LP
             if(distortion_sys):
-                distortion_weight,_,_ = self.reweight_lund_plane(h_rw = h_distortion_ratio, reclust_obj = reclust_nom, sys_str = 'distortion')
+                distortion_weight,_,_,_, sweights, slpidx, subweights = self.reweight_lund_plane(h_rw = h_distortion_ratio, reclust_obj = reclust_nom, sys_str = 'distortion')
 
+                out['raw_distortion'][i] = distortion_weight
                 out['distortion_up'][i] = out['nom'][i] * distortion_weight
                 out['distortion_down'][i] = out['nom'][i] / distortion_weight
+                for x in subweights:
+                    out['subjet_weights'].append(x)
+                for x in sweights:
+                    out['splitting_weights'].append(x)
+                for x in slpidx:
+                    out['lp_idxs'].append(x)
 
 
             if(do_sys_weights):
                 #Now get systematic variations due to systemtatic uncertainties on LP
-                out['sys_up'][i],_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_up, reclust_obj = reclust_nom, sys_str = 'sys_tot_up_')
-                out['sys_down'][i],_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_down, reclust_obj = reclust_nom, sys_str = 'sys_tot_down_')
+                out['sys_up'][i],_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_up, reclust_obj = reclust_nom, sys_str = 'sys_tot_up_')
+                out['sys_down'][i],_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_down, reclust_obj = reclust_nom, sys_str = 'sys_tot_down_')
 
                 #compute special systematic for subjets matched to b quarks
                 #not needed if signal does not specifically produce b quark subjets
@@ -738,17 +752,16 @@ class LundReweighter():
                         b_subjet = [reclust_nom.subjet[j] for j in range(len(reclust_nom.subjet)) if j in b_matches]
                         b_split  = [reclust_nom.split[j]  for j in range(len(reclust_nom.split)) if reclust_nom.split[j][0] in b_matches]
 
-                        b_rw, _,_   = self.reweight_lund_plane(self.b_light_ratio, subjets = b_subjet, splittings = b_split, sys_str = 'bquark')
+                        b_rw,_,_,_,_,_,_  = self.reweight_lund_plane(self.b_light_ratio, subjets = b_subjet, splittings = b_split, sys_str = 'bquark')
 
                     else: b_rw = 1.0
                 out['bquark_up'][i] = out['nom'][i]* b_rw
                 out['bquark_down'][i] = out['nom'][i]/b_rw
 
-        
         if(normalize):
             nom_noNorm = None
             for key in out.keys():
-                if(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key)):
+                if(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
                     if(isinstance(out[key], np.ndarray)):
                         out[key], noNorm = self.normalize_weights(out[key], n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark, nProngs = nProngs)
                         if key == 'nom': nom_noNorm = noNorm
@@ -808,26 +821,40 @@ class LundReweighter():
         if(rand_noise is not None): smeared_rw = np.array([1.0]*rand_noise.shape[0])
         if(pt_rand_noise is not None): pt_smeared_rw = np.array([1.0]*pt_rand_noise.shape[0])
 
+        all_lpidxs = []
+        splitting_weights = []
+        subjet_weights = []
+        nSplittings = []
         #splittings save idx of associated subjet
-
         for i in range(len(subjets)):
+            rw_subjet = 1.0
+            # subjet pt  must be over 5GeV
+            # subjetpt = subjets[i][0]
+            # if subjetpt <= 10:
+            #     # print("subjet pt less than 5GeV")
+            #     # print("rw", rw_subjet)
+            #     subjet_weights.append(rw_subjet)
+            #     continue
 
             #ignore subjets that aren't matched to anything
             if(not subjet_match[i]): continue
 
             if(len(splittings) > 0):
+
                 lp_idxs = self.get_lund_plane_idxs(h_rw, subjet_idx = i, splittings = splittings, subjets = [subjets[i]])
 
+                for x in lp_idxs: all_lpidxs.append(x)
                 if(self.pt_extrap_dir is None or (subjets[i][0] > self.pt_extrap_min and subjets[i][0] < self.pt_extrap_max) or ('bquark' in sys_str) or ('distortion' in sys_str)):
-                    rw, smeared_rw, pt_smeared_rw = self.reweight(h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, rand_noise = rand_noise)
+                    rw, smeared_rw, pt_smeared_rw, rw_subjet = self.reweight(h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, splitting_weights, rand_noise = rand_noise)
                 else:
                     rw, smeared_rw, pt_smeared_rw = self.reweight_pt_extrap(subjets[i][0], lp_idxs, rw, smeared_rw, pt_smeared_rw, pt_rand_noise = pt_rand_noise, sys_str = sys_str)
+            subjet_weights.append(rw_subjet)
+            nSplittings.append(len(splittings))
 
-        
-        return rw, smeared_rw, pt_smeared_rw
+        return rw, smeared_rw, pt_smeared_rw, nSplittings, splitting_weights, all_lpidxs, subjet_weights
 
 
-    def make_LP_ratio(self, h_data, h_bkg, h_mc,  h_data_subjet_pt = None, h_bkg_subjet_pt = None, h_mc_subjet_pt = None, pt_bins = None, outdir = "", save_plots = False):
+    def make_LP_ratio(self, h_data, h_bkg, h_mc,  h_data_subjet_pt = None, h_bkg_subjet_pt = None, h_mc_subjet_pt = None, pt_bins = None, outdir = "", save_plots = False, isDistortion = False):
         """ Function to construct data/MC LP ratio"""
 
         do_jet_pt_norm  = (h_data_subjet_pt is not None) and (h_mc_subjet_pt is not None) and (h_bkg_subjet_pt is not None)
@@ -881,7 +908,6 @@ class LundReweighter():
             pt_bins = np.arange(0, h_data.GetNbinsX()+1)
 
 
-
         for i in range(1, h_data.GetNbinsX() + 1):
             h_bkg_clone1 = h_bkg_clone.Clone("h_bkg_clone%i" %i)
             h_mc_clone1 = h_mc_clone.Clone("h_mc_clone%i"% i)
@@ -907,7 +933,6 @@ class LundReweighter():
                 mc_norm = h_mc_proj.Integral() + eps
 
 
-
             if(bkg_norm > 0): h_bkg_proj.Scale(1./bkg_norm)
 
             h_data_proj.Scale(1./data_norm)
@@ -928,11 +953,15 @@ class LundReweighter():
 
 
             if(save_plots): 
+                ROOT.gStyle.SetOptStat(0)
 
                 h_mc_proj.SetTitle("Signal MC pT %.0f - %.0f" % (pt_bins[i-1], pt_bins[i]))
-                h_data_proj.SetTitle("Data - Bkg pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
                 h_ratio_proj.SetTitle("Ratio pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
 
+                if isDistortion:
+                    h_data_proj.SetTitle(h_data_proj.GetTitle() + "pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
+                else:
+                    h_data_proj.SetTitle("Data - Bkg pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
 
                 c_mc = ROOT.TCanvas("c", "", 1000, 1000)
                 h_mc_proj.Draw("colz")
@@ -1016,12 +1045,12 @@ class LundReweighter():
         #combine lund_weights into a per-jet situation, not a per darkHadron jet situation
         #Oz's code returns a list of weights "per list of input particles" which is assumed to be a list of particles per jet.
         # ours was a list of particles per dark hadron - now combine the weights into a per-jet weight
-        new_lund_weights = None
-        j = 1
 
         # if there are no dark hadrons in a jet (aka nd = [])
         # should we just skip it? then we don't have a placeholder for that jet
         # which is maybe fine, but maybe not?
+
+        new_lund_weights = None
         nDark = ak.flatten(nDark)
         if (len(lund_weights.shape) == 1):
             lund_weights = ak.unflatten(lund_weights, nDark)

@@ -1,8 +1,8 @@
 import sys, os
 sys.path.insert(0, '')
 sys.path.append("../")
-from utils.Utils import *
-from utils.PlotUtils import *
+from lund_utils.Utils import *
+from lund_utils.PlotUtils import *
 
 def style(h):
 
