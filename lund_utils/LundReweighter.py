@@ -595,17 +595,16 @@ class LundReweighter():
                 'distortion_down': np.zeros((nEvts)),
                 'raw_distortion': np.zeros((nEvts)),
                 'n_prongs': np.zeros((nEvts), dtype=np.int32),
-                'subjet_pts': [],
-                'subjet_pts_perDarkHadron': [],
-                'subjet_weights': [],
                 'bad_match': [False,]*nEvts,
                 'reclust_still_bad_match': [False,]*nEvts,
                 'reclust_nom': [],
                 'reclust_prongs_up': [],
                 'reclust_prongs_down': [],
+                'subjetPts': [],
+                'subjetWeights': [],
                 'nSplittings': [],
-                'splitting_weights': [],
-                'lp_idxs': []
+                'splittingWeights': [],
+                'lpIdxs': []
         }
         return out
 
@@ -678,7 +677,7 @@ class LundReweighter():
         if(distortion_sys):
             h_dummy = self.h_mc.Clone("h_dummy")
             h_dummy.Reset()
-            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=True, isDistortion=True)
+            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=False, isDistortion=True)
             cleanup_ratio(h_distortion_ratio, h_min=0.2, h_max = 5.0)
 
         for i in range(len(out['reclust_nom'])):
@@ -703,12 +702,10 @@ class LundReweighter():
 
             subj = []
             for sj in reclust_nom.subjet:
-                out['subjet_pts'].append(sj[0])
                 subj.append(sj[0])
-            out['subjet_pts_perDarkHadron'].append(subj)
+            out['subjetPts'].append(subj)
 
-            for ns in nSplittings:
-                out['nSplittings'].append(ns)
+            out['nSplittings'].append(nSplittings)
 
             #compute systematic due to distorted LP
             if(distortion_sys):
@@ -717,12 +714,10 @@ class LundReweighter():
                 out['raw_distortion'][i] = distortion_weight
                 out['distortion_up'][i] = out['nom'][i] * distortion_weight
                 out['distortion_down'][i] = out['nom'][i] / distortion_weight
-                for x in subweights:
-                    out['subjet_weights'].append(x)
-                for x in sweights:
-                    out['splitting_weights'].append(x)
-                for x in slpidx:
-                    out['lp_idxs'].append(x)
+
+                out['subjetWeights'].append(subweights)
+                out['splittingWeights'].append(sweights)
+                out['lpIdxs'].append(slpidx)
 
 
             if(do_sys_weights):
@@ -765,6 +760,10 @@ class LundReweighter():
                     if(isinstance(out[key], np.ndarray)):
                         out[key], noNorm = self.normalize_weights(out[key], n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark, nProngs = nProngs)
                         if key == 'nom': nom_noNorm = noNorm
+
+                else:
+                    out[key] = ak.unflatten(out[key], ak.flatten(nDark))
+
             out['nom_noNorm'] = nom_noNorm
 
         return out

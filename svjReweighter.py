@@ -94,7 +94,12 @@ def calculate_lund_weights(events, mc_year):
     output = run_reweighting(mc_year, constituentsFlat, jetsFlat, nDarkHadronsPerJet, nProngsPerJet, nevts_tot)
 
     for k in output.keys():
-        if k in ['subjet_pts_perDarkHadron', 'subjet_weights', 'lp_idxs', 'splitting_weights', 'nSplittings', 'n_prongs', 'subjet_pts', 'bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
+        if k in ['bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
+        elif k in ['n_prongs', 'subjetPts', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs']:
+            continue
+            eventLevel = ak.unflatten(output[k], nJetsPerEvent)
+            k = k.capitalize().replace('_', '').replace('prongs', 'Prongs')
+            events["lundWeight"+k] = eventLevel
         elif k in ["stat_vars", "pt_vars"]:
             # Unflatten to (nEvents, nJetsPerEvent, nToys)
             stat_vars = ak.unflatten(output[k], nJetsPerEvent)
@@ -113,10 +118,9 @@ def calculate_lund_weights(events, mc_year):
             events[f"lundWeight{k.replace('_vars', '')}Up"] = np.clip(event_weights_up, 0,5)
             events[f"lundWeight{k.replace('_vars', '')}Down"] = np.clip(event_weights_down, 0,5)
         else:
-            print(k)
             weights = ak.unflatten(output[k], nJetsPerEvent)
             event_weights = ak.prod(weights, axis=-1)
             k = k.capitalize().replace('up', 'Up').replace('down', 'Down').replace('distortion', 'Distortion')
             events["lundWeight"+k.replace('_','')] = np.clip(event_weights, 0,5)
 
-    return events, maskempty
+    return events
