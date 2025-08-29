@@ -711,10 +711,19 @@ class LundReweighter():
             if(distortion_sys):
                 distortion_weight,_,_,_, sweights, slpidx, subweights = self.reweight_lund_plane(h_rw = h_distortion_ratio, reclust_obj = reclust_nom, sys_str = 'distortion')
 
+                # Implement raw_distortion = 1 + x
+                # up is nom * raw_distortion
+                # down is nom * (1-x)
                 out['raw_distortion'][i] = distortion_weight
                 out['distortion_up'][i] = out['nom'][i] * distortion_weight
-                out['distortion_down'][i] = out['nom'][i] / distortion_weight
+                
+                x = distortion_weight - 1
+                distortion_weight_down = max(0,(1-x))
+                out['distortion_down'][i] = out['nom'][i] * distortion_weight_down
+                # out['distortion_up'][i] = out['nom'][i] * distortion_weight
+                # out['distortion_down'][i] = out['nom'][i] / distortion_weight
 
+                
                 out['subjetWeights'].append(subweights)
                 out['splittingWeights'].append(sweights)
                 out['lpIdxs'].append(slpidx)
@@ -755,16 +764,20 @@ class LundReweighter():
 
         if(normalize):
             nom_noNorm = None
+            distortion_noNorm = None
             for key in out.keys():
+                print(key)
                 if(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
                     if(isinstance(out[key], np.ndarray)):
                         out[key], noNorm = self.normalize_weights(out[key], n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark, nProngs = nProngs)
                         if key == 'nom': nom_noNorm = noNorm
+                        if key == 'raw_distortion': distortion_noNorm = noNorm
 
                 else:
                     out[key] = ak.unflatten(out[key], ak.flatten(nDark))
 
-            out['nom_noNorm'] = nom_noNorm
+            out['nomNoNorm'] = nom_noNorm
+            out['distortionNoNorm'] = distortion_noNorm
 
         return out
 
@@ -848,8 +861,11 @@ class LundReweighter():
                 else:
                     rw, smeared_rw, pt_smeared_rw = self.reweight_pt_extrap(subjets[i][0], lp_idxs, rw, smeared_rw, pt_smeared_rw, pt_rand_noise = pt_rand_noise, sys_str = sys_str)
             subjet_weights.append(rw_subjet)
+            #subjet_weights.append( np.clip(rw_subjet, self.min_rw, self.max_rw) )
             nSplittings.append(len(splittings))
 
+        #rw = np.prod(subjet_weights)
+        #rw = np.clip(rw, self.min_rw, self.max_rw)
         return rw, smeared_rw, pt_smeared_rw, nSplittings, splitting_weights, all_lpidxs, subjet_weights
 
 
