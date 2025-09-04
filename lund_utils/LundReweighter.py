@@ -107,7 +107,7 @@ class LundReweighter():
         self.pf_pt_min = pf_pt_min
         self.charge_only = charge_only
         self.max_rw = 5.
-        self.min_rw = 0.2
+        self.min_rw = 0.3
         self.min_pt = 10.
         self.min_kt, self.max_kt = min_kt, max_kt
         self.min_delta, self.max_delta = min_delta, max_delta
@@ -422,9 +422,9 @@ class LundReweighter():
             if(subjet_idx >= 0 and jet_i != subjet_idx): continue
             if(LP_order > 0 and order != LP_order): continue
 
-            if(subjet_pt < self.min_pt): 
-                #print("WARNING subjet found with pt %.1f GeV is below correction minimum of %.1f, rescaling to minimum" % (subjet_pt, self.min_pt))
-                subjet_pt = self.min_pt + 1.0
+            # if(subjet_pt < self.min_pt): 
+            #     #print("WARNING subjet found with pt %.1f GeV is below correction minimum of %.1f, rescaling to minimum" % (subjet_pt, self.min_pt))
+            #     subjet_pt = self.min_pt + 1.0
 
             jet_int = int(np.round(jet_i))
             jet_pt = subjets_reshape[0] if no_idx else subjets_reshape[jet_int*4]
@@ -776,8 +776,8 @@ class LundReweighter():
                 else:
                     out[key] = ak.unflatten(out[key], ak.flatten(nDark))
 
-            out['nomNoNorm'] = nom_noNorm
-            out['distortionNoNorm'] = distortion_noNorm
+            out['nomNoNorm'] = ak.unflatten(nom_noNorm, ak.flatten(nDark))
+            out['distortionNoNorm'] = ak.unflatten(distortion_noNorm, ak.flatten(nDark))
 
         return out
 
@@ -841,12 +841,12 @@ class LundReweighter():
         for i in range(len(subjets)):
             rw_subjet = 1.0
             # subjet pt  must be over 5GeV
-            # subjetpt = subjets[i][0]
-            # if subjetpt <= 10:
-            #     # print("subjet pt less than 5GeV")
-            #     # print("rw", rw_subjet)
-            #     subjet_weights.append(rw_subjet)
-            #     continue
+            subjetpt = subjets[i][0]
+            if subjetpt <= self.min_pt:
+                # print("subjet pt less than 5GeV")
+                # print("rw", rw_subjet)
+                subjet_weights.append(rw_subjet)
+                continue
 
             #ignore subjets that aren't matched to anything
             if(not subjet_match[i]): continue
@@ -865,7 +865,7 @@ class LundReweighter():
             nSplittings.append(len(splittings))
 
         #rw = np.prod(subjet_weights)
-        #rw = np.clip(rw, self.min_rw, self.max_rw)
+        rw = np.clip(rw, self.min_rw, self.max_rw)
         return rw, smeared_rw, pt_smeared_rw, nSplittings, splitting_weights, all_lpidxs, subjet_weights
 
 

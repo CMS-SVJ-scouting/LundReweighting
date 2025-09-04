@@ -95,7 +95,7 @@ def calculate_lund_weights(events, mc_year):
 
     for k in output.keys():
         if k in ['bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
-        elif k in ['n_prongs', 'subjetPts', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs']:
+        elif k in ['n_prongs', 'subjetPts', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs', 'distortion_noNorm']:
             continue
             eventLevel = ak.unflatten(output[k], nJetsPerEvent)
             k = k.capitalize().replace('_', '').replace('prongs', 'Prongs')
