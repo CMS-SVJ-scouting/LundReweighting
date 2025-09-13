@@ -722,7 +722,6 @@ class LundReweighter():
                 out['distortion_down'][i] = out['nom'][i] * distortion_weight_down
                 # out['distortion_up'][i] = out['nom'][i] * distortion_weight
                 # out['distortion_down'][i] = out['nom'][i] / distortion_weight
-
                 
                 out['subjetWeights'].append(subweights)
                 out['splittingWeights'].append(sweights)
@@ -766,7 +765,6 @@ class LundReweighter():
             nom_noNorm = None
             distortion_noNorm = None
             for key in out.keys():
-                print(key)
                 if(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
                     if(isinstance(out[key], np.ndarray)):
                         out[key], noNorm = self.normalize_weights(out[key], n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark, nProngs = nProngs)
@@ -776,8 +774,8 @@ class LundReweighter():
                 else:
                     out[key] = ak.unflatten(out[key], ak.flatten(nDark))
 
-            out['nomNoNorm'] = ak.unflatten(nom_noNorm, ak.flatten(nDark))
-            out['distortionNoNorm'] = ak.unflatten(distortion_noNorm, ak.flatten(nDark))
+            out['nomNoNorm'] = nom_noNorm
+            out['RawDistortionNoNorm'] = distortion_noNorm
 
         return out
 
@@ -1085,6 +1083,7 @@ class LundReweighter():
             mask = (n_prongs == n)
             weights = new_lund_weights[mask]
             if(len(weights) == 0): continue
+            if (np.mean(weights) == 0): continue
 
             weights = np.clip(weights, 0., w_max)
             if(len(weights.shape) > 1): weights /= np.mean(weights, axis = 0, keepdims=True)

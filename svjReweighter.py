@@ -95,10 +95,11 @@ def calculate_lund_weights(events, mc_year):
 
     for k in output.keys():
         if k in ['bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
-        elif k in ['n_prongs', 'subjetPts', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs', 'distortion_noNorm']:
-            continue
+        elif k in ['n_prongs', 'subjetPts', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs', 'RawDistortionNoNorm']:
+            #continue
+            if 'Distortion' in k or 'distortion' in k: events["lundWeightJet"+k.replace('_','')] = ak.unflatten(output[k], nJetsPerEvent)
             eventLevel = ak.unflatten(output[k], nJetsPerEvent)
-            k = k.capitalize().replace('_', '').replace('prongs', 'Prongs')
+            k = k.capitalize().replace('_', '').replace('prongs', 'Prongs').replace('distortion', 'Distortion').replace('raw', 'Raw')
             events["lundWeight"+k] = eventLevel
         elif k in ["stat_vars", "pt_vars"]:
             # Unflatten to (nEvents, nJetsPerEvent, nToys)
@@ -118,6 +119,8 @@ def calculate_lund_weights(events, mc_year):
             events[f"lundWeight{k.replace('_vars', '')}Up"] = np.clip(event_weights_up, 0,5)
             events[f"lundWeight{k.replace('_vars', '')}Down"] = np.clip(event_weights_down, 0,5)
         else:
+            if 'RawDistortion' in k or 'Rawdistortion' in k or 'raw_distortion' in k:
+                events["lundWeightJet"+k.replace('_','').replace('distortion', 'Distortion').replace('raw', 'Raw')] = ak.unflatten(output[k], nJetsPerEvent)
             weights = ak.unflatten(output[k], nJetsPerEvent)
             event_weights = ak.prod(weights, axis=-1)
             k = k.capitalize().replace('up', 'Up').replace('down', 'Down').replace('distortion', 'Distortion')
