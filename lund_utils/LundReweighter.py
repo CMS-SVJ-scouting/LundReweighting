@@ -95,7 +95,7 @@ def get_subjet_dist(q_eta_phis, subjets_eta_phis):
 class LundReweighter():
 
     def __init__(self, f_ratio = None, jetR = -1, maxJets = -1, pt_extrap_dir = None, pt_extrap_min = 15., pt_extrap_max = 350., pf_pt_min = 0.0, charge_only = False, 
-             min_kt = 0.02, max_kt = 99999., min_delta = 0.005, max_delta = 99999., LP_order = 1, use_CA = False) :
+                 min_kt = 0.02, max_kt = 99999., min_delta = 0.005, max_delta = 99999., LP_order = 1, use_CA = False, min_pt = 0.0) :
 
         self.jetR = jetR
         self.maxJets = maxJets
@@ -108,7 +108,7 @@ class LundReweighter():
         self.charge_only = charge_only
         self.max_rw = 5.
         self.min_rw = 0.3
-        self.min_pt = 10.
+        self.min_pt = min_pt
         self.min_kt, self.max_kt = min_kt, max_kt
         self.min_delta, self.max_delta = min_delta, max_delta
         self.LP_order = LP_order

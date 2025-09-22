@@ -16,7 +16,7 @@ sys.path.append("../")
 from lund_utils.Utils import *
 import math
 
-def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet, nevts_tot):
+def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet, nevts_tot, minPt = 0):
     # Lund systematic setup
     nToys = 100
     nSys = 10
@@ -31,7 +31,7 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
 
     f_ratio_current = ROOT.TFile.Open("../LundReweighting/data/ratio_"+str(year)+".root")
 
-    LP_rws = LundReweighter( f_ratio = f_ratio_current )
+    LP_rws = LundReweighter( f_ratio = f_ratio_current, min_pt = minPt )
 
     #Noise used to generated smeared ratio's based on stat unc
     np.random.seed(123)
@@ -43,7 +43,7 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
 
     return out
 
-def calculate_lund_weights(events, mc_year):
+def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
 
     # number of events in current sample
     nevts_tot = ak.size(events["EvtNum"])
@@ -91,7 +91,7 @@ def calculate_lund_weights(events, mc_year):
     nProngsPerEvent = ak.flatten(nProngsPerJet)
 
     # returns a weight per jet
-    output = run_reweighting(mc_year, constituentsFlat, jetsFlat, nDarkHadronsPerJet, nProngsPerJet, nevts_tot)
+    output = run_reweighting(mc_year, constituentsFlat, jetsFlat, nDarkHadronsPerJet, nProngsPerJet, nevts_tot, minPt = subjetMinPt)
 
     for k in output.keys():
         if k in ['bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'nom_noNorm']: continue
