@@ -504,3 +504,46 @@ def get_quantile_axis2(ak_array, q):
             f"q{int(qq*100)}": result[..., i] for i, qq in enumerate(q)
         })
 
+def get_quantile_axis1(ak_array, q):
+    """
+    Compute quantiles along axis=1 (innermost axis) of a 2-level jagged array.
+
+    Parameters:
+    - array: Awkward Array with at least 2 levels of nesting (e.g. ListOffsetArray of ListOffsetArray)
+    - q: float or list of floats between 0 and 1
+
+    Returns:
+    - Awkward Array of quantile values along axis=2
+    """
+    if isinstance(q, float):
+        q = [q]
+
+    # Sort along axis=2
+    sorted_array = ak.sort(ak_array, axis=-1)
+
+    # Number of elements along axis=1
+    lengths = ak.num(sorted_array, axis=1)
+
+    def get_quantiles(inner, n):
+        if n == 0:
+            return [None for _ in q]
+        return [
+            inner[min(int(np.floor(qq * (n - 1))), n - 1)]
+            for qq in q
+        ]
+
+    # Apply over axis=(0,1)
+    result = ak.Array([
+            get_quantiles(cell, len(cell))
+            for cell in sorted_array
+    ])
+
+    # Return in clean form
+    if len(q) == 1:
+        return result[..., 0]
+    else:
+        # return a dict of {qXX: values}
+        return ak.zip({
+            f"q{int(qq*100)}": result[..., i] for i, qq in enumerate(q)
+        })
+

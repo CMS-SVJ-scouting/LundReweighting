@@ -106,7 +106,7 @@ class LundReweighter():
         self.pt_extrap_max = pt_extrap_max
         self.pf_pt_min = pf_pt_min
         self.charge_only = charge_only
-        self.max_rw = 5.
+        self.max_rw = 2.
         self.min_rw = 0.3
         self.min_pt = min_pt
         self.min_kt, self.max_kt = min_kt, max_kt
@@ -516,7 +516,7 @@ class LundReweighter():
         return rw, smeared_rw, pt_smeared_rw
 
 
-    def reweight(self, h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, sweights, rand_noise = None):
+    def reweight(self, h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, sweights, subweight_smeared, rand_noise = None):
         """Reweight based on directly measured data/MC LP ratio"""
 
         rws = 1.0
@@ -539,6 +539,7 @@ class LundReweighter():
             if(rand_noise is not None):
                 smeared_vals = val + rand_noise[:,i-1,j-1,k-1] * err
                 smeared_vals = np.clip(smeared_vals, self.min_rw, self.max_rw)
+                subweight_smeared.append(smeared_vals)
                 smeared_rw *= smeared_vals
 
         return rw, smeared_rw, pt_smeared_rw, rws
@@ -604,7 +605,8 @@ class LundReweighter():
                 'subjetWeights': [],
                 'nSplittings': [],
                 'splittingWeights': [],
-                'lpIdxs': []
+                'lpIdxs': [],
+                'subjetStatVars': [],
         }
         return out
 
@@ -684,9 +686,15 @@ class LundReweighter():
             reclust_nom, reclust_prongs_up, reclust_prongs_down = out['reclust_nom'][i], out['reclust_prongs_up'][i], out['reclust_prongs_down'][i]
 
             #Gets the nominal LP reweighting factor for this event and statistical + pt extrapolation toys
-            out['nom'][i], out['stat_vars'][i], out['pt_vars'][i], nSplittings,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio,
+            out['nom'][i], out['stat_vars'][i], out['pt_vars'][i], nSplittings,_,_,_, subStatWeights = self.reweight_lund_plane(h_rw = self.h_ratio,
                                     reclust_obj = reclust_nom, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise)
-            
+
+            substat = []
+            for sub in subStatWeights:
+                for s in sub:
+                    substat.append(s)
+            out['subjetStatVars'].append(substat)
+
             out['prongs_up'][i], out['prongs_down'][i]  = self.get_up_down_prongs_weights(h_rw = self.h_ratio, 
                     reclust_prongs_up = reclust_prongs_up, reclust_prongs_down = reclust_prongs_down, nom_weight = out['nom'][i])
 
@@ -709,7 +717,7 @@ class LundReweighter():
 
             #compute systematic due to distorted LP
             if(distortion_sys):
-                distortion_weight,_,_,_, sweights, slpidx, subweights = self.reweight_lund_plane(h_rw = h_distortion_ratio, reclust_obj = reclust_nom, sys_str = 'distortion')
+                distortion_weight,_,_,_, sweights, slpidx, subweights, _, = self.reweight_lund_plane(h_rw = h_distortion_ratio, reclust_obj = reclust_nom, sys_str = 'distortion')
 
                 # Implement raw_distortion = 1 + x
                 # up is nom * raw_distortion
@@ -730,8 +738,8 @@ class LundReweighter():
 
             if(do_sys_weights):
                 #Now get systematic variations due to systemtatic uncertainties on LP
-                out['sys_up'][i],_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_up, reclust_obj = reclust_nom, sys_str = 'sys_tot_up_')
-                out['sys_down'][i],_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_down, reclust_obj = reclust_nom, sys_str = 'sys_tot_down_')
+                out['sys_up'][i],_,_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_up, reclust_obj = reclust_nom, sys_str = 'sys_tot_up_')
+                out['sys_down'][i],_,_,_,_,_,_,_ = self.reweight_lund_plane(h_rw = self.h_ratio_sys_down, reclust_obj = reclust_nom, sys_str = 'sys_tot_down_')
 
                 #compute special systematic for subjets matched to b quarks
                 #not needed if signal does not specifically produce b quark subjets
@@ -755,7 +763,7 @@ class LundReweighter():
                         b_subjet = [reclust_nom.subjet[j] for j in range(len(reclust_nom.subjet)) if j in b_matches]
                         b_split  = [reclust_nom.split[j]  for j in range(len(reclust_nom.split)) if reclust_nom.split[j][0] in b_matches]
 
-                        b_rw,_,_,_,_,_,_  = self.reweight_lund_plane(self.b_light_ratio, subjets = b_subjet, splittings = b_split, sys_str = 'bquark')
+                        b_rw,_,_,_,_,_,_,_  = self.reweight_lund_plane(self.b_light_ratio, subjets = b_subjet, splittings = b_split, sys_str = 'bquark')
 
                     else: b_rw = 1.0
                 out['bquark_up'][i] = out['nom'][i]* b_rw
@@ -835,6 +843,8 @@ class LundReweighter():
         splitting_weights = []
         subjet_weights = []
         nSplittings = []
+        rw_subjet_smeared = []
+        stat_subweights = []
         #splittings save idx of associated subjet
         for i in range(len(subjets)):
             rw_subjet = 1.0
@@ -855,16 +865,17 @@ class LundReweighter():
 
                 for x in lp_idxs: all_lpidxs.append(x)
                 if(self.pt_extrap_dir is None or (subjets[i][0] > self.pt_extrap_min and subjets[i][0] < self.pt_extrap_max) or ('bquark' in sys_str) or ('distortion' in sys_str)):
-                    rw, smeared_rw, pt_smeared_rw, rw_subjet = self.reweight(h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, splitting_weights, rand_noise = rand_noise)
+                    rw, smeared_rw, pt_smeared_rw, rw_subjet = self.reweight(h_rw, lp_idxs, rw, smeared_rw, pt_smeared_rw, splitting_weights, rw_subjet_smeared, rand_noise = rand_noise)
                 else:
                     rw, smeared_rw, pt_smeared_rw = self.reweight_pt_extrap(subjets[i][0], lp_idxs, rw, smeared_rw, pt_smeared_rw, pt_rand_noise = pt_rand_noise, sys_str = sys_str)
             subjet_weights.append(rw_subjet)
+            stat_subweights.append(rw_subjet_smeared)
             #subjet_weights.append( np.clip(rw_subjet, self.min_rw, self.max_rw) )
             nSplittings.append(len(splittings))
 
         #rw = np.prod(subjet_weights)
         rw = np.clip(rw, self.min_rw, self.max_rw)
-        return rw, smeared_rw, pt_smeared_rw, nSplittings, splitting_weights, all_lpidxs, subjet_weights
+        return rw, smeared_rw, pt_smeared_rw, nSplittings, splitting_weights, all_lpidxs, subjet_weights, stat_subweights
 
 
     def make_LP_ratio(self, h_data, h_bkg, h_mc,  h_data_subjet_pt = None, h_bkg_subjet_pt = None, h_mc_subjet_pt = None, pt_bins = None, outdir = "", save_plots = False, isDistortion = False):

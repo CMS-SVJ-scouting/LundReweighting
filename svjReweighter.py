@@ -101,20 +101,30 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
             eventLevel = ak.unflatten(output[k], nJetsPerEvent)
             k = k.capitalize().replace('_', '').replace('prongs', 'Prongs').replace('distortion', 'Distortion').replace('raw', 'Raw')
             events["lundWeight"+k] = eventLevel
+        elif k == 'subjetStatVars':
+            sub_stat_vars = ak.flatten(ak.flatten(ak.unflatten(output[k], nJetsPerEvent), axis=-3), axis=-2)#ak.unflatten(output[k], nJetsPerEvent) #
+            events[f"lundWeightSubJetStatVars"] = sub_stat_vars
+            subweights_up = get_quantile_axis2(sub_stat_vars, 0.84)
+            subweights_down = get_quantile_axis2(sub_stat_vars, 0.16)
+            events[f"lundWeightSubJetStatUp"] = subweights_up
+            events[f"lundWeightSubJetStatDown"] = subweights_down
         elif k in ["stat_vars", "pt_vars"]:
-            # Unflatten to (nEvents, nJetsPerEvent, nToys)
+            # Save Raw Jet toys
             stat_vars = ak.unflatten(output[k], nJetsPerEvent)
+            events['lundWeightJetStatVars'] = stat_vars
+            # Save jet level stat weights
             # Take the 16th and 84th percentiles instead. Awkward does not have a
             # quantile function, so we have to do it by hand
             weights_up = get_quantile_axis2(stat_vars, 0.84)
             weights_down = get_quantile_axis2(stat_vars, 0.16)
-            # Check for and protect against negative weights
-            if ak.any(weights_up < 0) or ak.any(weights_down < 0):
-                print(f"WARNING: Negative weights found in {k}. Clipping to zero.")
-                weights_up = ak.where(weights_up < 0, 0, weights_up)
-                weights_down = ak.where(weights_down < 0, 0, weights_down)
-            event_weights_up = ak.prod(weights_up, axis=-1)
-            event_weights_down = ak.prod(weights_down, axis=-1)
+            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Up"] = np.clip(weights_up, 0, 5)
+            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Down"] = np.clip(weights_down, 0, 5)
+
+            # Save Event level toys and weights
+            event_weights = ak.prod(stat_vars, axis=-2)
+            events['lundWeightEventStatVars'] = event_weights
+            event_weights_up = get_quantile_axis1(event_weights, 0.84)
+            event_weights_down = get_quantile_axis1(event_weights, 0.16)
             k = k.capitalize()
             events[f"lundWeight{k.replace('_vars', '')}Up"] = np.clip(event_weights_up, 0,5)
             events[f"lundWeight{k.replace('_vars', '')}Down"] = np.clip(event_weights_down, 0,5)
