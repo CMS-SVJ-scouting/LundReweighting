@@ -117,8 +117,14 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
             # quantile function, so we have to do it by hand
             weights_up = get_quantile_axis2(stat_vars, 0.84)
             weights_down = get_quantile_axis2(stat_vars, 0.16)
-            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Up"] = np.clip(weights_up, 0, 5)
-            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Down"] = np.clip(weights_down, 0, 5)
+            # events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Up"] = np.clip(weights_up, 0, 5)
+            weights_up = ak.where(weights_up > 5, 5, weights_up)
+            weights_up = ak.where(weights_up < 0, 0, weights_up)
+            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Up"] = weights_up
+            # events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Down"] = np.clip(weights_down, 0, 5)
+            weights_down = ak.where(weights_down > 5, 5, weights_down)
+            weights_down = ak.where(weights_down < 0, 0, weights_down)
+            events[f"lundWeightJet{k.replace('_vars', '').capitalize()}Down"] = weights_down
 
             # Save Event level toys and weights
             event_weights = ak.prod(stat_vars, axis=-2)
