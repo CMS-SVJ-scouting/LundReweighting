@@ -612,7 +612,7 @@ class LundReweighter():
 
 
     def get_all_weights(self, pf_cands, gen_parts_eta_phi, ak8_jets, gen_parts_pdg_ids = None, do_sys_weights = True, distortion_sys = True, 
-                        nToys = 100, rand_noise = None, pt_rand_noise = None, normalize = True, pt_norm = True, pf_cands_PtEtaPhiE_format = False, nDark = None, nProngs = None):
+                        nToys = 100, rand_noise = None, pt_rand_noise = None, normalize = True, pt_norm = True, pf_cands_PtEtaPhiE_format = False, nDark = None):
         """ Master function for the lund plane reweighting method. Takes in collection of events and computes nominal set of weights and variations from uncertainties
             All weights are normalized to average to one, so that the sample normalization is preserved
         Inputs:
@@ -769,26 +769,45 @@ class LundReweighter():
                 out['bquark_up'][i] = out['nom'][i]* b_rw
                 out['bquark_down'][i] = out['nom'][i]/b_rw
 
-        if(normalize):
-            nom_noNorm = None
-            distortion_noNorm = None
-            for key in out.keys():
-                if(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
-                    if(isinstance(out[key], np.ndarray)):
-                        out[key], noNorm = self.normalize_weights(out[key], n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark, nProngs = nProngs)
-                        if key == 'nom': nom_noNorm = noNorm
-                        if key == 'raw_distortion': distortion_noNorm = noNorm
+        nom_noNorm = None
+        distortion_noNorm = None
+        nDark = ak.flatten(nDark)
+        out['n_prongs'] = ak.unflatten(out['n_prongs'], nDark)
+        out['n_prongs'] = ak.sum(out['n_prongs'],axis=1)
 
-                else:
-                    out[key] = ak.unflatten(out[key], ak.flatten(nDark))
+        for key in out.keys():
+            if(key=='n_prongs'): continue
+            elif(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
+                if(isinstance(out[key], np.ndarray)):
+                    #combine lund_weights into a per-jet situation, not a per darkHadron jet situation
+                    #Oz's code returns a list of weights "per list of input particles" which is assumed to be a list of particles per jet.
+                    # ours was a list of particles per dark hadron - now combine the weights into a per-jet weight
 
-            out['nomNoNorm'] = nom_noNorm
-            out['RawDistortionNoNorm'] = distortion_noNorm
+                    # if there are no dark hadrons in a jet (aka nd = [])
+                    # should we just skip it? then we don't have a placeholder for that jet
+                    # which is maybe fine, but maybe not?
+                    weights = out[key]
+                    if (len(weights.shape) == 1):
+                        weights = ak.unflatten(weights, nDark)
+                        lund_weights = ak.to_numpy(ak.prod(weights, axis=1))
+                    else:
+                        lund_weights = np.ones((len(nDark), weights.shape[1]))
+                        for i in range(weights.shape[1]):
+                            nlw = ak.unflatten(weights[:,i], nDark)
+                            lund_weights[:,i] = ak.to_numpy(ak.prod(nlw, axis=1))
+
+                    if key == 'nom': nom_noNorm = lund_weights
+                    if key == 'raw_distortion': distortion_noNorm = lund_weights
+
+                    if(normalize): out[key] = self.normalize_weights(lund_weights, n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark)
+
+            else:
+                out[key] = ak.unflatten(out[key], nDark)
+
+        out['nomNoNorm'] = nom_noNorm
+        out['RawDistortionNoNorm'] = distortion_noNorm
 
         return out
-
-
-
 
 
     def reweight_lund_plane(self, h_rw, pf_cands = None, reclust_obj = None, splittings = None, subjets = None, num_excjets = -1, 
@@ -1064,35 +1083,16 @@ class LundReweighter():
         Done separately for jets of different number of prongs, so not biased
         Also clip outlier weights so to not be dominated by statistical fluctuations. """
 
-        n_prongs = ak.flatten(nProngs)
+        print(len(n_prongs))
+        print(n_prongs)
         
-        #combine lund_weights into a per-jet situation, not a per darkHadron jet situation
-        #Oz's code returns a list of weights "per list of input particles" which is assumed to be a list of particles per jet.
-        # ours was a list of particles per dark hadron - now combine the weights into a per-jet weight
-
-        # if there are no dark hadrons in a jet (aka nd = [])
-        # should we just skip it? then we don't have a placeholder for that jet
-        # which is maybe fine, but maybe not?
-
-        new_lund_weights = None
-        nDark = ak.flatten(nDark)
-        if (len(lund_weights.shape) == 1):
-            lund_weights = ak.unflatten(lund_weights, nDark)
-            new_lund_weights = ak.to_numpy(ak.prod(lund_weights, axis=1))
-        else:
-            new_lund_weights = np.ones((len(nDark), lund_weights.shape[1]))
-            for i in range(lund_weights.shape[1]):
-                nlw = ak.unflatten(lund_weights[:,i], nDark)
-                new_lund_weights[:,i] = ak.to_numpy(ak.prod(nlw, axis=1))                                     
-
-        unnormalized_lund_weights = new_lund_weights.copy()
         #separate norm per each number of prongs (so dist is not biased)
         if(n_prongs is None): n_prongs = np.ones_like(lund_weights, dtype=np.int32)
         max_prongs = int(round(np.amax(n_prongs)))
 
         for n in range(1, max_prongs+1):
             mask = (n_prongs == n)
-            weights = new_lund_weights[mask]
+            weights = lund_weights[mask]
             if(len(weights) == 0): continue
             if (np.mean(weights) == 0): continue
 
@@ -1114,9 +1114,9 @@ class LundReweighter():
                 else: weights /= np.mean(weights)
                 new = np.average(ak8_pts[mask], weights = weights) if len(weights.shape) == 1 else 1.0
 
-            new_lund_weights[mask] = weights
+            lund_weights[mask] = weights
 
-        return new_lund_weights, unnormalized_lund_weights
+        return lund_weights
 
 class ReclusterObj():
     """Main object storing reclustering of jet"""

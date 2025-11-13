@@ -39,7 +39,7 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
     pt_rand_noise = np.random.normal(size = (nToys, LP_rws.h_ratio.GetNbinsY(), LP_rws.h_ratio.GetNbinsZ(), 3))
     #print('rand', rand_noise[0,0,0,:5])
 
-    out = LP_rws.get_all_weights(constituents, None, jets, do_sys_weights = True, distortion_sys = True, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise, normalize = True, pf_cands_PtEtaPhiE_format = True, nDark = nDarkHadronsPerJet, nProngs = nProngsPerJet)
+    out = LP_rws.get_all_weights(constituents, None, jets, do_sys_weights = True, distortion_sys = True, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise, normalize = True, pf_cands_PtEtaPhiE_format = True, nDark = nDarkHadronsPerJet)
 
     return out
 
