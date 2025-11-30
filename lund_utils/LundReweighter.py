@@ -799,7 +799,9 @@ class LundReweighter():
                     if key == 'nom': nom_noNorm = lund_weights
                     if key == 'raw_distortion': distortion_noNorm = lund_weights
 
-                    if(normalize): out[key] = self.normalize_weights(lund_weights, n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'], nDark = nDark)
+                    #if(normalize): out[key] = self.normalize_weights(lund_weights, n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'])
+
+                    out[key] = lund_weights
 
             else:
                 out[key] = ak.unflatten(out[key], nDark)
@@ -1078,14 +1080,11 @@ class LundReweighter():
 
 
 
-    def normalize_weights(self, lund_weights, w_min = 0.1, w_max = 10., n_prongs = None, pt_norm = True, ak8_pts = None, nDark = None, nProngs = None):
+    def normalize_weights(self, lund_weights, w_min = 0.1, w_max = 10., n_prongs = None, pt_norm = True, ak8_pts = None):
         """Normalize lund plane weights so average weight is 1 (necessary to preserve normalization of MC.)
         Done separately for jets of different number of prongs, so not biased
         Also clip outlier weights so to not be dominated by statistical fluctuations. """
 
-        print(len(n_prongs))
-        print(n_prongs)
-        
         #separate norm per each number of prongs (so dist is not biased)
         if(n_prongs is None): n_prongs = np.ones_like(lund_weights, dtype=np.int32)
         max_prongs = int(round(np.amax(n_prongs)))
