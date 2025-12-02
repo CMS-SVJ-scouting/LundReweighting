@@ -37,7 +37,6 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
     np.random.seed(123)
     rand_noise = np.random.normal(size = (nToys, LP_rws.h_ratio.GetNbinsX(), LP_rws.h_ratio.GetNbinsY(), LP_rws.h_ratio.GetNbinsZ()))
     pt_rand_noise = np.random.normal(size = (nToys, LP_rws.h_ratio.GetNbinsY(), LP_rws.h_ratio.GetNbinsZ(), 3))
-    #print('rand', rand_noise[0,0,0,:5])
 
     out = LP_rws.get_all_weights(constituents, None, jets, do_sys_weights = True, distortion_sys = True, rand_noise = rand_noise, pt_rand_noise = pt_rand_noise, normalize = True, pf_cands_PtEtaPhiE_format = True, nDark = nDarkHadronsPerJet)
 
@@ -81,14 +80,14 @@ def prep_events(events):
     constituentsFlat = ak.zip( [ak.flatten(ak.flatten(constituents_pt)), ak.flatten(ak.flatten(constituents_eta)), ak.flatten(ak.flatten(constituents_phi)), ak.flatten(ak.flatten(constituents_E)) ] )
     return constituentsFlat, jetsFlat, constituents_pt, jets_pt
 
-def get_sumw_perProng(lund_weights, n_prongs):
+def get_sumw_perProng(norm_dict, k, lund_weights, n_prongs):
     #separate norm per each number of prongs (so dist is not biased)
     if(n_prongs is None): n_prongs = np.ones_like(lund_weights, dtype=np.int32)
     max_prongs = int(round(np.amax(n_prongs)))
 
-    prongs_dict = {}
-    for n in range(1, max_prongs+1):
 
+    for n in range(1, max_prongs+1):
+        key = k + "_" + str(n)
         mask = (n_prongs == n)
         weights = lund_weights[mask]
         if(len(weights) == 0): continue
@@ -99,9 +98,10 @@ def get_sumw_perProng(lund_weights, n_prongs):
             sumw = np.sum(weights, axis = 0)
         else: sumw = np.sum(weights)
 
-        prongs_dict[str(n)] = {'sumw': sumw, 'njets': nJets}
+        norm_dict[key + "_sumw"] = sumw
+        norm_dict[key + "_njets"] = nJets
 
-    return prongs_dict
+    return norm_dict
 
 def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
 
@@ -131,18 +131,19 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
             events[newk] = ak.unflatten(output[k], nJetsPerEvent)
         else:
             newk = 'lundWeight' + k.capitalize().replace('_','').replace('vars', 'Vars').replace('up', 'Up').replace('down', 'Down').replace('distortion', 'Distortion')
-            norm_dict[newk] = get_sumw_perProng(output[k], output['n_prongs'])
+            norm_dict = get_sumw_perProng(norm_dict, newk, output[k], output['n_prongs'])
             events[newk] = ak.unflatten(output[k], nJetsPerEvent)
-
+    # print("norm_dict", norm_dict)
     return events, norm_dict
 
-def lund_normalization(events,field, norm):
+def lund_normalization(events, field, norm):
+    event_field = field.split("_")[0]
     nJetsPerEvent = ak.num(events['lundWeightNprongs'], axis=1)
-    weights = ak.to_numpy(ak.flatten(events[field]))
+    weights = ak.to_numpy(ak.flatten(events[event_field]))
     nProngs = list(map(str,ak.flatten(events['lundWeightNprongs'])))
 
-    sumw  = np.array([norm[field][p]['sumw']  for p in nProngs])
-    njets = np.array([norm[field][p]['njets'] for p in nProngs])
+    sumw  = np.array([norm[field+"_"+ p +"_sumw"] for p in nProngs])
+    njets = np.array([norm[field+"_"+ p +"_njets"] for p in nProngs])
 
     if(len(weights.shape) > 1): weights_mean = sumw / njets[:,None]
     else: weights_mean = sumw / njets
