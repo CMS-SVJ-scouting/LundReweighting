@@ -125,6 +125,7 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
 
     norm_dict = {}
     for k in output.keys():
+        if len(output[k]) == 0: continue
         if k in ['bad_match', 'reclust_still_bad_match', 'reclust_nom', 'reclust_prongs_up', 'reclust_prongs_down', 'bquark_up', 'bquark_down', 'unclust_up', 'unclust_down', 'prongs_up', 'prongs_down']: continue
         elif k in ['subjetPts', 'subjetStatVars', 'subjetWeights', 'nSplittings', 'splittingWeights', 'lpIdxs', 'RawDistortionNoNorm', 'n_prongs', 'nomNoNorm']:
             newk = 'lundWeight' + k.capitalize().replace('_','').replace('vars', 'Vars').replace('up', 'Up').replace('down', 'Down').replace('distortion', 'Distortion').replace('nonorm', 'NoNorm')

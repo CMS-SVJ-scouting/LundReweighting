@@ -777,6 +777,7 @@ class LundReweighter():
 
         for key in out.keys():
             if(key=='n_prongs'): continue
+            if(len(out[key]) == 0): continue
             elif(('nom' in key) or ('up' in key) or ('down' in key) or ('vars' in key) or ('distortion' in key)):
                 if(isinstance(out[key], np.ndarray)):
                     #combine lund_weights into a per-jet situation, not a per darkHadron jet situation
