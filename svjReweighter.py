@@ -138,9 +138,8 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
     return events, norm_dict
 
 def lund_normalization(events, field, norm):
-    event_field = field.split("_")[0]
     nJetsPerEvent = ak.num(events['lundWeightNprongs'], axis=1)
-    weights = ak.to_numpy(ak.flatten(events[event_field]))
+    weights = ak.to_numpy(ak.flatten(events[field]))
     nProngs = list(map(str,ak.flatten(events['lundWeightNprongs'])))
 
     sumw  = np.array([norm[field+"_"+ p +"_sumw"] for p in nProngs])
