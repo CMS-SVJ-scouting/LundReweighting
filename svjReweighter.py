@@ -85,7 +85,7 @@ def get_sumw_perProng(norm_dict, k, lund_weights, n_prongs):
     if(n_prongs is None): n_prongs = np.ones_like(lund_weights, dtype=np.int32)
     max_prongs = int(round(np.amax(n_prongs)))
 
-
+    lund_weights = np.clip(lund_weights, 0.1, 10.0)
     for n in range(1, max_prongs+1):
         key = k + "_" + str(n)
         mask = (n_prongs == n)
