@@ -132,6 +132,7 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
             events[newk] = ak.unflatten(output[k], nJetsPerEvent)
         else:
             newk = 'lundWeight' + k.capitalize().replace('_','').replace('vars', 'Vars').replace('up', 'Up').replace('down', 'Down').replace('distortion', 'Distortion')
+            output[k] = np.clip(output[k], 0.1, 10.0)
             norm_dict = get_sumw_perProng(norm_dict, newk, output[k], output['n_prongs'])
             events[newk] = ak.unflatten(output[k], nJetsPerEvent)
     # print("norm_dict", norm_dict)
