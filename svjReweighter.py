@@ -138,8 +138,7 @@ def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
     # print("norm_dict", norm_dict)
     return events, norm_dict
 
-def lund_normalization(events, field, norm):
-    nJetsPerEvent = ak.num(events['lundWeightNprongs'], axis=1)
+def lund_normalization(events, field, norm, nJetsPerEvent):
     weights = ak.to_numpy(ak.flatten(events[field]))
     nProngs = list(map(str,ak.flatten(events['lundWeightNprongs'])))
 
