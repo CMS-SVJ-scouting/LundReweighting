@@ -156,7 +156,9 @@ def lund_normalization(events, field, norm, nJetsPerEvent):
 
 
 def lund_post(events, field):
-    if field == 'subjetStatVars':
+    if 'Nprongs' in field or 'Nsplittings' in field:
+        events[field] = events[field]
+    elif field == 'subjetStatVars':
         sub_stat_vars = ak.flatten(ak.flatten(events[field]), axis=-3)
         events[f"lundWeightSubJetStatVars"] = sub_stat_vars
         subweights_up = get_quantile_axis2(sub_stat_vars, 0.84)
@@ -181,7 +183,41 @@ def lund_post(events, field):
         event_weights_down = get_quantile_axis1(event_weights, 0.16)
         events[f"{field.replace('Vars', 'Up')}"] = np.clip(event_weights_up, 0,5)
         events[f"{field.replace('Vars', 'Down')}"] = np.clip(event_weights_down, 0,5)
-    elif field in ['lundWeightNom', 'lundWeightSysUp', 'lundWeightSysDown', 'lundWeightDistortionUp', 'lundWeightDistortionDown', 'lundWeightRawDistortion', 'lundWeightNomNoNorm', 'lundWeightRawdistortionNoNorm']:
+    elif (field in ['lundWeightRawDistortion']):
         if 'RawDistortion' in field or 'Rawdistortion' in field or 'raw_distortion' in field:
             events["lundWeightJetRawDistortion"] = events[field]
+        #Calculate Distortion Up and Down Variations
+
+        ## Jet Level Variations
+        # print('n negative raw distortion jets', ak.sum(events['lundWeightRawDistortion'] <0))
+        # x = events['lundWeightRawDistortion'] - 1
+        # events['lundWeightDistortionUp'] = events['lundWeightRawDistortion'] #events['lundWeightNom'] * events['lundWeightRawDistortion']
+        # events['lundWeightDistortionDown'] = ak.where((1-x)<0, 0, (1-x)) #events['lundWeightNom'] * (1 - x)
+        # events['lundWeightRawDistortion'] = ak.prod(events['lundWeightRawDistortion'], axis=-1)
+        # evtDown = events['lundWeightDistortionDown']
+        # events['lundWeightDistortionDown'] = ak.prod(events['lundWeightDistortionDown'], axis=-1)
+        # maskrd = (events['lundWeightDistortionDown'] > 2)
+
+        # print("down > 2: ", events['lundWeightRawDistortion'][maskrd][2:5])
+        # print('x for down > 2: ', x[maskrd][2:5])
+        # print('up for down > 2: ', events['lundWeightDistortionUp'][maskrd][2:5])
+        # print('down for down > 2: ', evtDown[maskrd][2:5])
+
+        # events['lundWeightDistortionUp'] = ak.prod(events['lundWeightDistortionUp'], axis=-1)
+
+        # events['lundWeightRawDistortion'] = np.clip(events['lundWeightRawDistortion'], 0, 5)
+        # events['lundWeightDistortionUp'] = np.clip(events['lundWeightDistortionUp'], 0, 5)
+        # events['lundWeightDistortionDown'] = np.clip(events['lundWeightDistortionDown'], 0, 5)
+
+        ### Event Level Variations
+        events['lundWeightRawDistortion'] = ak.prod(events['lundWeightRawDistortion'], axis=-1)
+        x = events['lundWeightRawDistortion'] - 1
+        events['lundWeightDistortionUp'] = events['lundWeightRawDistortion']*events['lundWeightNom']
+        events['lundWeightDistortionDown'] = ak.where((1-x)<0, 0, (1-x))*events['lundWeightNom']
+
+        events['lundWeightRawDistortion'] = np.clip(events['lundWeightRawDistortion'], 0, 5)
+        events['lundWeightDistortionUp'] = np.clip(events['lundWeightDistortionUp'], 0, 5)
+        events['lundWeightDistortionDown'] = np.clip(events['lundWeightDistortionDown'], 0, 5)
+
+    elif (field in ['lundWeightNom', 'lundWeightSysUp', 'lundWeightSysDown', 'lundWeightNomNoNorm', 'lundWeightRawdistortionNoNorm']):
         events[field] = np.clip(ak.prod(events[field], axis=-1), 0, 5)

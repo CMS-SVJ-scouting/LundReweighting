@@ -130,11 +130,9 @@ class LundReweighter():
             #MC ratio of b to light quarks
             self.b_light_ratio = f_ratio.Get("h_bl_ratio")
 
-
             #directory of pt extrapolation fits
             f_ratio.cd('pt_extrap')
-            self.pt_extrap_dir = ROOT.gDirectory
-
+            self.pt_extrap_dir = copy.deepcopy(ROOT.gDirectory)
 
 
 
@@ -592,8 +590,8 @@ class LundReweighter():
                 'prongs_down': np.zeros((nEvts)),
                 'unclust_up': np.zeros((nEvts)),
                 'unclust_down': np.zeros((nEvts)),
-                'distortion_up': np.zeros((nEvts)),
-                'distortion_down': np.zeros((nEvts)),
+                #'distortion_up': np.zeros((nEvts)),
+                #'distortion_down': np.zeros((nEvts)),
                 'raw_distortion': np.zeros((nEvts)),
                 'n_prongs': np.zeros((nEvts), dtype=np.int32),
                 'bad_match': [False,]*nEvts,
@@ -646,7 +644,6 @@ class LundReweighter():
         if(skip_bquark_unc): print("Missing b/light ratio. Skipping this systematic")
 
 
-
         if(rand_noise is None): rand_noise = np.random.normal(size = (nToys, self.h_ratio.GetNbinsX(), self.h_ratio.GetNbinsY(), self.h_ratio.GetNbinsZ()))
         if(pt_rand_noise is None): pt_rand_noise = np.random.normal(size = (nToys, self.h_ratio.GetNbinsY(), self.h_ratio.GetNbinsZ(), 3))
 
@@ -679,7 +676,7 @@ class LundReweighter():
         if(distortion_sys):
             h_dummy = self.h_mc.Clone("h_dummy")
             h_dummy.Reset()
-            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=False, isDistortion=True)
+            h_distortion_ratio = self.make_LP_ratio(self.h_mc, h_dummy, h_lp_signal, save_plots=False, outdir ='lundplots/distortion/', isDistortion=True)
             cleanup_ratio(h_distortion_ratio, h_min=0.2, h_max = 5.0)
 
         for i in range(len(out['reclust_nom'])):
@@ -723,11 +720,13 @@ class LundReweighter():
                 # up is nom * raw_distortion
                 # down is nom * (1-x)
                 out['raw_distortion'][i] = distortion_weight
-                out['distortion_up'][i] = out['nom'][i] * distortion_weight
+                #out['distortion_up'][i] = out['nom'][i] * distortion_weight
+                #out['distortion_up'][i] = distortion_weight
                 
-                x = distortion_weight - 1
-                distortion_weight_down = max(0,(1-x))
-                out['distortion_down'][i] = out['nom'][i] * distortion_weight_down
+                #x = distortion_weight - 1
+                #distortion_weight_down = max(0,(1-x))
+                #out['distortion_down'][i] = out['nom'][i] * distortion_weight_down
+                #out['distortion_down'][i] = distortion_weight_down
                 # out['distortion_up'][i] = out['nom'][i] * distortion_weight
                 # out['distortion_down'][i] = out['nom'][i] / distortion_weight
                 
@@ -799,6 +798,7 @@ class LundReweighter():
 
                     if key == 'nom': nom_noNorm = lund_weights
                     if key == 'raw_distortion': distortion_noNorm = lund_weights
+
 
                     #if(normalize): out[key] = self.normalize_weights(lund_weights, n_prongs = out['n_prongs'], pt_norm = pt_norm, ak8_pts = ak8_jets[:,'0'])
 
@@ -902,7 +902,7 @@ class LundReweighter():
 
     def make_LP_ratio(self, h_data, h_bkg, h_mc,  h_data_subjet_pt = None, h_bkg_subjet_pt = None, h_mc_subjet_pt = None, pt_bins = None, outdir = "", save_plots = False, isDistortion = False):
         """ Function to construct data/MC LP ratio"""
-
+        """ For distortion, h_data is self.h_mc (W MC), h_bkg is h_dummy (not used) and h_mc is signal """
         do_jet_pt_norm  = (h_data_subjet_pt is not None) and (h_mc_subjet_pt is not None) and (h_bkg_subjet_pt is not None)
 
         cleanup_hist(h_mc)
@@ -910,8 +910,6 @@ class LundReweighter():
 
         h_bkg_clone = h_bkg.Clone(h_bkg.GetName() + "_clone")
         h_mc_clone = h_mc.Clone(h_mc.GetName() + "_clone")
-
-
 
         h_ratio = h_data.Clone(h_mc_clone.GetName() + "_ratio")
         h_ratio.SetTitle("(Data - Bkg ) / Signal MC")
@@ -943,16 +941,16 @@ class LundReweighter():
         h_data_sub = h_data.Clone("h_data_sub")
         h_data_sub.Add(h_bkg_clone, -1.)
         #h_data_sub.Print()
-
         eps = 1e-6
-
-
-
         cleanup_hist(h_data_sub)
 
         if (pt_bins is None):
             pt_bins = np.arange(0, h_data.GetNbinsX()+1)
 
+
+        if (save_plots):
+            fname = outdir + 'plots.root'
+            f = ROOT.TFile.Open(fname, "UPDATE")
 
         for i in range(1, h_data.GetNbinsX() + 1):
             h_bkg_clone1 = h_bkg_clone.Clone("h_bkg_clone%i" %i)
@@ -996,24 +994,23 @@ class LundReweighter():
             copy_proj(i, h_ratio_proj, h_ratio)
 
 
-
-
             if(save_plots): 
                 ROOT.gStyle.SetOptStat(0)
 
                 h_mc_proj.SetTitle("Signal MC pT %.0f - %.0f" % (pt_bins[i-1], pt_bins[i]))
                 h_ratio_proj.SetTitle("Ratio pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
 
-                if isDistortion:
-                    h_data_proj.SetTitle(h_data_proj.GetTitle() + "pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
-                else:
-                    h_data_proj.SetTitle("Data - Bkg pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
+                if isDistortion: h_data_proj.SetTitle("W MC" + "pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
+                else: h_data_proj.SetTitle("Data - Bkg pT %.0f - %.0f (N = %.0f)" % (pt_bins[i-1], pt_bins[i], data_norm))
 
                 c_mc = ROOT.TCanvas("c", "", 1000, 1000)
                 h_mc_proj.Draw("colz")
                 c_mc.SetRightMargin(0.2)
-                c_mc.Print(outdir + "lundPlane_bin%i_MC.png" % i)
-
+                if (isDistortion): name = (outdir + "lundPlane_bin%i_Signal.png" % i)
+                else: name = (outdir + "lundPlane_bin%i_Simulation.png" % i)
+                c_mc.Print(name)
+                writeName = name.replace(outdir, '').replace('.png', '')
+                f.WriteObject(copy.deepcopy(h_mc_proj), writeName)
 
                 if(bkg_norm > 0):
                     h_bkg_proj.SetTitle("Bkg MC pT %.0f - %.0f" % (pt_bins[i-1], pt_bins[i]))
@@ -1025,15 +1022,18 @@ class LundReweighter():
                 c_data = ROOT.TCanvas("c", "", 1000, 1000)
                 h_data_proj.Draw("colz")
                 c_data.SetRightMargin(0.2)
-                c_data.Print(outdir + "lundPlane_bin%i_data.png" %i )
-
-
+                if (isDistortion) : name = (outdir + "lundPlane_bin%i_WMC.png" %i )
+                else: name = (outdir + "lundPlane_bin%i_data.png" %i )
+                c_data.Print(name)
+                writeName = name.replace(outdir, '').replace('.png', '')
+                f.WriteObject(copy.deepcopy(h_data_proj), writeName)
 
                 c_ratio = ROOT.TCanvas("c", "", 1000, 1000)
-                cleanup_ratio(h_ratio_proj, h_min =0., h_max = 2.0)
+                #cleanup_ratio(h_ratio_proj, h_min =0., h_max = 2.0)
                 h_ratio_proj.Draw("colz")
                 c_ratio.SetRightMargin(0.2)
                 c_ratio.Print(outdir + "lundPlane_bin%i_ratio.png" % i)
+                f.WriteObject(copy.deepcopy(h_ratio_proj), "lundPlane_bin%i_ratio" % i)
 
                 h_ratio_unc = get_unc_hist(h_ratio_proj)
                 cleanup_ratio(h_ratio_unc, h_min = 0., h_max = 1.0)
@@ -1042,8 +1042,11 @@ class LundReweighter():
                 h_ratio_unc.Draw("colz")
                 c_ratio_unc.SetRightMargin(0.2)
                 c_ratio_unc.Print(outdir + "lundPlane_bin%i_ratio_unc.png" % i)
+                print(copy.deepcopy(h_ratio_unc), outdir + "lundPlane_bin%i_ratio" % i)
+                f.WriteObject(copy.deepcopy(h_ratio_unc), outdir + "lundPlane_bin%i_ratio" % i)
                 h_ratio_unc.Reset()
 
+        if(save_plots): f.Close()
         return h_ratio
 
     def compute_pt_weights(self, pts, weights, outlier_percentage = 3):
