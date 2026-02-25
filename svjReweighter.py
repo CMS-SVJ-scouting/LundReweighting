@@ -155,7 +155,7 @@ def lund_normalization(events, field, norm, nJetsPerEvent):
     return events[field]
 
 
-def lund_post(events, field):
+def lund_post(events, field, doTestDist=False):
     if 'Nprongs' in field or 'Nsplittings' in field:
         events[field] = events[field]
     elif field == 'subjetStatVars':
@@ -210,10 +210,17 @@ def lund_post(events, field):
         # events['lundWeightDistortionDown'] = np.clip(events['lundWeightDistortionDown'], 0, 5)
 
         ### Event Level Variations
-        events['lundWeightRawDistortion'] = ak.prod(events['lundWeightRawDistortion'], axis=-1)*events['lundWeightNom']
-        x = events['lundWeightRawDistortion'] - 1
-        events['lundWeightDistortionUp'] = events['lundWeightRawDistortion']
-        events['lundWeightDistortionDown'] = ak.where((1-x)<0, 0, (1-x))
+        if (doTestDist):
+            events['lundWeightRawDistortion'] = ak.prod(events['lundWeightRawDistortion'], axis=-1)*events['lundWeightNom']
+            x = events['lundWeightRawDistortion'] - 1
+            events['lundWeightDistortionUp'] = events['lundWeightRawDistortion']
+            events['lundWeightDistortionDown'] = ak.where((1-x)<0, 0, (1-x))
+        else: 
+            events['lundWeightRawDistortion'] = ak.prod(events['lundWeightRawDistortion'], axis=-1)
+            x = events['lundWeightRawDistortion'] - 1
+            events['lundWeightDistortionUp'] = events['lundWeightRawDistortion']*events['lundWeightNom']
+            events['lundWeightDistortionDown'] = ak.where((1-x)<0, 0, (1-x))*events['lundWeightNom']
+
 
         events['lundWeightRawDistortion'] = np.clip(events['lundWeightRawDistortion'], 0, 5)
         events['lundWeightDistortionUp'] = np.clip(events['lundWeightDistortionUp'], 0, 5)
