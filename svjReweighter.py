@@ -5,16 +5,253 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mplhep as hep
 from coffea.nanoevents import NanoEventsFactory #, TreeMakerSchema
-import treemaker
-from treemaker import TreeMakerSchema
 import fastjet
 from lund_utils.Utils import get_quantile_axis2
+import numba as nb
+
 
 import sys, os
 sys.path.insert(0, '')
 sys.path.append("../")
 from lund_utils.Utils import *
 import math
+
+
+def phi_mpi_pi(angle):
+        
+    # Initial check
+    if -np.pi <= angle <= np.pi:
+        return angle
+    
+    # Normalization process
+    if angle > 0:
+        n = int(0.5 * (angle / np.pi + 1))
+        angle -= 2 * n * np.pi
+    else:
+        n = int(-0.5 * (angle / np.pi - 1))
+        angle += 2 * n * np.pi
+    
+    return angle
+
+
+
+def get_dr2(phi1, eta1, phi2, eta2):
+
+    dphi = phi_mpi_pi(phi1 - phi2)
+    deta = eta1 - eta2
+    return dphi*dphi + deta*deta
+
+
+nb.jit(nopython=True)
+def get_matched_gen_jets_(
+    pt_builder,
+    eta_builder,
+    phi_builder,
+    mass_builder,
+    hvcat_builder,
+
+    reco_jets,
+    gen_jets,
+
+    m_genMatch_dR2max,
+):
+
+    for (
+        j_pts_reco,
+        j_etas_reco,
+        j_phis_reco,
+        j_genIdxs,
+
+        j_pts_gen,
+        j_etas_gen,
+        j_phis_gen,
+        j_masses_gen,
+        j_hvcats_gen,
+
+    ) in zip(
+
+        reco_jets.pt,
+        reco_jets.eta,
+        reco_jets.phi,
+        reco_jets.genJetAK8Idx,
+
+        gen_jets.pt,
+        gen_jets.eta,
+        gen_jets.phi,
+        gen_jets.mass,
+        gen_jets.hvCategory,
+    ):
+
+        pt_builder.begin_list()
+        eta_builder.begin_list()
+        phi_builder.begin_list()
+        mass_builder.begin_list()
+        hvcat_builder.begin_list()
+
+        for reco_j_idx, j_genIdx in enumerate(j_genIdxs):
+
+
+            if (j_genIdx >= 0) and (j_genIdx < len(j_pts_gen)):
+
+                
+
+                dr2 = get_dr2(
+                    j_phis_reco[reco_j_idx],
+                    j_etas_reco[reco_j_idx],
+                    j_phis_gen[j_genIdx],
+                    j_etas_gen[j_genIdx],
+                )
+
+
+                if (dr2 < m_genMatch_dR2max):
+
+                    pt_builder.append(j_pts_gen[j_genIdx])
+                    eta_builder.append(j_etas_gen[j_genIdx])
+                    phi_builder.append(j_phis_gen[j_genIdx])
+                    mass_builder.append(j_masses_gen[j_genIdx])
+                    hvcat_builder.append(j_hvcats_gen[j_genIdx])
+
+                else:
+                    pt_builder.append(None)
+                    eta_builder.append(None)
+                    phi_builder.append(None)
+                    mass_builder.append(None)
+                    hvcat_builder.append(None)
+
+            else:
+                pt_builder.append(None)
+                eta_builder.append(None)
+                phi_builder.append(None)
+                mass_builder.append(None)
+                hvcat_builder.append(None)
+
+        pt_builder.end_list()
+        eta_builder.end_list()
+        phi_builder.end_list()
+        mass_builder.end_list()
+        hvcat_builder.end_list()
+
+        matched_gen_jets = ak.zip(
+            {
+                "pt": pt_builder.snapshot(),
+                "eta": eta_builder.snapshot(),
+                "phi": phi_builder.snapshot(),
+                "mass": mass_builder.snapshot(),
+                "hvCategory": hvcat_builder.snapshot(),
+            }
+        )
+    return matched_gen_jets
+
+def get_matched_gen_jets(reco_jets, gen_jets, m_genMatch_dR2max):
+    pt_builder = ak.ArrayBuilder()
+    eta_builder = ak.ArrayBuilder()
+    phi_builder = ak.ArrayBuilder()
+    mass_builder = ak.ArrayBuilder()
+    hvcat_builder = ak.ArrayBuilder()
+    return get_matched_gen_jets_(pt_builder, 
+                                 eta_builder,
+                                 phi_builder,
+                                 mass_builder,
+                                 hvcat_builder,
+                                 reco_jets,  
+                                 gen_jets,
+                                 m_genMatch_dR2max)
+
+
+nb.jit(nopython=True)
+def __get_ak8jets_svj_constituents_( 
+    constituents_pt_builder,
+    constituents_eta_builder,
+    constituents_phi_builder,
+    constituents_E_builder,
+    ak8jets_svj,
+    subjets_constituents
+):
+
+    
+
+    for ak8jet_svj, subjets_constituents_event in zip(ak8jets_svj, subjets_constituents):
+
+        constituents_pt_builder.begin_list()
+        constituents_eta_builder.begin_list()
+        constituents_phi_builder.begin_list()
+        constituents_E_builder.begin_list()
+
+        
+        for jetIdx in ak8jet_svj.jetIdx:
+
+            constituents_pt_builder.begin_list()
+            constituents_eta_builder.begin_list()
+            constituents_phi_builder.begin_list()
+            constituents_E_builder.begin_list()
+
+
+            subjets_constituents_jet = subjets_constituents_event[subjets_constituents_event.jetIdx == jetIdx]
+
+            #for constituent in subjets_constituents_jet:
+            mask_constituents = subjets_constituents_jet.assignedSecond != 1
+
+            #require pt > 0.5, and abs eta < 2.4
+            mask_constituents = mask_constituents & (subjets_constituents_jet.pt > 0.5) & (np.abs(subjets_constituents_jet.eta) < 2.4)
+
+            subjets_constituents_jet = subjets_constituents_jet[mask_constituents]
+
+            #loop over subjetIdx
+            for subjetIdx in np.unique(subjets_constituents_jet.subJetIdx):
+
+                constituents_pt_builder.begin_list()
+                constituents_eta_builder.begin_list()
+                constituents_phi_builder.begin_list()
+                constituents_E_builder.begin_list()
+
+                #filter subjets_constituents_jet based on subjetIdx
+                subjets_constituents_sub_i = subjets_constituents_jet[subjets_constituents_jet.subJetIdx == subjetIdx]
+
+                constituents_pt_builder.extend(subjets_constituents_sub_i.pt)
+                constituents_eta_builder.extend(subjets_constituents_sub_i.eta)
+                constituents_phi_builder.extend(subjets_constituents_sub_i.phi)
+                constituents_E_builder.extend(subjets_constituents_sub_i.E)
+
+                constituents_pt_builder.end_list()
+                constituents_eta_builder.end_list()
+                constituents_phi_builder.end_list()
+                constituents_E_builder.end_list()
+
+            constituents_pt_builder.end_list()
+            constituents_eta_builder.end_list()
+            constituents_phi_builder.end_list()
+            constituents_E_builder.end_list()
+
+        constituents_pt_builder.end_list()
+        constituents_eta_builder.end_list()
+        constituents_phi_builder.end_list()
+        constituents_E_builder.end_list()
+
+
+    return ak.zip(
+        {
+            "pt": constituents_pt_builder.snapshot(),
+            "eta": constituents_eta_builder.snapshot(),
+            "phi": constituents_phi_builder.snapshot(),
+            "E": constituents_E_builder.snapshot(),
+        }
+    )
+
+
+
+def get_ak8jets_svj_constituents(ak8jets_svj, subjets_constituents):
+        constituents_pt_builder = ak.ArrayBuilder()
+        constituents_eta_builder = ak.ArrayBuilder()
+        constituents_phi_builder = ak.ArrayBuilder()
+        constituents_E_builder = ak.ArrayBuilder()
+        return __get_ak8jets_svj_constituents_(
+            constituents_pt_builder,
+            constituents_eta_builder,
+            constituents_phi_builder,
+            constituents_E_builder,
+            ak8jets_svj,
+            subjets_constituents
+        )
 
 def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet, nevts_tot, minPt = 0):
     # Lund systematic setup
@@ -43,27 +280,61 @@ def run_reweighting(year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet,
     return out
 
 def prep_events(events):
-    # mask to only svj categories
-    mask = events["JetsAK8"].genIndex >= 0
-    gen_jet_index = events["JetsAK8"].genIndex[mask]
+   
+    reco_jets = ak.zip({
+            "event_rho": events["rho"],
+            "pt": events[f"FatJet_pt"],
+            "eta": events[f"FatJet_eta"],
+            "phi": events[f"FatJet_phi"],
+            "mass": events[f"FatJet_mass"],
+            "genJetAK8Idx": events[f"FatJet_genJetAK8Idx"]
+        })
+    
+    #create jetIdx branch for reco_jets
+    reco_jets["jetIdx"] = ak.local_index(reco_jets.pt, axis=1)
 
-    genJets = events["GenJetsAK8"][gen_jet_index]
+    subjets_constituents = ak.zip({
+        "pt": events[f"FatJetDarkHadronsubJetsPFCands_pt"],
+        "eta": events[f"FatJetDarkHadronsubJetsPFCands_eta"],
+        "phi": events[f"FatJetDarkHadronsubJetsPFCands_phi"],
+        "E": events[f"FatJetDarkHadronsubJetsPFCands_E"],
+        "pdgId": events[f"FatJetDarkHadronsubJetsPFCands_pdgid"],
+        "jetIdx": events[f"FatJetDarkHadronsubJetsPFCands_jetIdx"],
+        "subJetIdx": events[f"FatJetDarkHadronsubJetsPFCands_subjetIdx"],
+        "assignedFirst": events[f"FatJetDarkHadronsubJetsPFCands_assignedFirst"],
+        "assignedSecond": events[f"FatJetDarkHadronsubJetsPFCands_assignedSecond"],
+        "matchStage": events[f"FatJetDarkHadronsubJetsPFCands_matchStage"]
+    })
 
-    hv_category = genJets.hvCategory
-    maskhv = (hv_category == 3) | (hv_category == 9) | (hv_category == 11) | (hv_category == 5) | (hv_category == 7) | (hv_category == 13)
 
-    ak8genjets = genJets[maskhv]
-    ak8jets = events["JetsAK8"]
-    ak8jets_svj = ak8jets[maskhv]
+    gen_jets = ak.zip(
+        {
+            "pt": events[f"GenFatJet_pt"],
+            "eta": events[f"GenFatJet_eta"],
+            "phi": events[f"GenFatJet_phi"],
+            "mass": events[f"GenFatJet_mass"],
+            "hvCategory": events[f"GenFatJet_hvCategory"],
+        }
+    )
 
-    # print(str(len(ak8jets_svj)) + " events in sample")
-    # print(str(len(ak.flatten(ak.nan_to_num(ak8jets.pt, nan=0)))) + " matched signal jets in sample.")
+    m_genMatch_dR2max = 0.4*0.4
+    matched_gen_jets = get_matched_gen_jets(reco_jets, gen_jets, m_genMatch_dR2max)
 
-    maskMatched = ak8jets_svj.darkHadronJets.constituentsAssignedSecond != 1
-    # print(ak.sum(ak8jets_svj.darkHadronJets.constituentsAssignedSecond), " number of constituents not used (assigned to second closest dark hadron.")
 
-    ak8jets_constituents_pdgid = ak8jets_svj.darkHadronJets.constituentsPdgid[maskMatched]
-    ak8jets_constituents = ak8jets_svj.darkHadronJets.constituents[maskMatched]
+    # Select HV gen jets containing dark-hadron descendants (bit 1) and matched to first dark quark/gluon and/or mediator states (bits 2,4,8)
+    maskhv = (matched_gen_jets.hvCategory == 3) | (matched_gen_jets.hvCategory == 9) | (matched_gen_jets.hvCategory == 11) | (matched_gen_jets.hvCategory == 5) | (matched_gen_jets.hvCategory == 7) | (matched_gen_jets.hvCategory == 13)
+
+    #filter matched gen jets based on maskhv - these genjets are created from reco loop
+    matched_gen_jets = matched_gen_jets[maskhv]
+
+
+    #filter recojets based on maskhv
+    ak8jets_svj = reco_jets[maskhv]
+
+    #filter jets with idx > 1 for ak8jets_svj
+    ak8jets_svj = ak8jets_svj[ak8jets_svj.jetIdx < 2]
+
+    ak8jets_constituents = get_ak8jets_svj_constituents(ak8jets_svj, subjets_constituents)
 
     constituents_pt = ak.nan_to_num(ak8jets_constituents.pt,nan=0)
     constituents_eta = ak.nan_to_num(ak8jets_constituents.eta,nan=0)
@@ -73,11 +344,19 @@ def prep_events(events):
     jets_pt = ak.nan_to_num(ak8jets_svj.pt ,nan=0)
     jets_eta = ak.nan_to_num(ak8jets_svj.eta ,nan=0)
     jets_phi = ak.nan_to_num(ak8jets_svj.phi ,nan=0)
-    jets_E = ak.nan_to_num(ak8jets_svj.E ,nan=0)
+    jets_m = ak.nan_to_num(ak8jets_svj.mass ,nan=0)
+
+    #momentum magnitude
+    jets_p = jets_pt * np.cosh(jets_eta)
+
+    #energy
+    jets_E = np.sqrt(jets_p**2 + jets_m**2)
+
 
     #flatten to get a 1D list of the darkHadronJet constituents and the jets- will have to deal with postprocessing this later
     jetsFlat = ak.zip([ak.flatten(jets_pt), ak.flatten(jets_eta), ak.flatten(jets_phi), ak.flatten(jets_E) ] )
-    constituentsFlat = ak.zip( [ak.flatten(ak.flatten(constituents_pt)), ak.flatten(ak.flatten(constituents_eta)), ak.flatten(ak.flatten(constituents_phi)), ak.flatten(ak.flatten(constituents_E)) ] )
+    constituentsFlat = ak.zip( [ak.flatten(constituents_pt), ak.flatten(constituents_eta), ak.flatten(constituents_phi), ak.flatten(constituents_E) ] )
+    
     return constituentsFlat, jetsFlat, constituents_pt, jets_pt
 
 def get_sumw_perProng(norm_dict, k, lund_weights, n_prongs):
@@ -106,19 +385,14 @@ def get_sumw_perProng(norm_dict, k, lund_weights, n_prongs):
 def calculate_lund_weights(events, mc_year, subjetMinPt = 0):
 
     # number of events in current sample
-    nevts_tot = ak.size(events["EvtNum"])
-    #print(str(nevts_tot) + " events in sample")
+    nevts_tot = len(events)
 
     constituents, jets, constituents_pt, jets_pt = prep_events(events)
 
-    nDarkHadronsPerJet = ak.num(constituents_pt,axis=2)
+    nDarkHadronsPerJet = ak.num(constituents_pt,axis=2) 
     nProngsPerJet = nDarkHadronsPerJet*2
     nJetsPerEvent = ak.num(jets_pt, axis=1)
     nProngsPerEvent = ak.flatten(nProngsPerJet)
-    # print("expected njets  with lund reweighting", ak.sum(nJetsPerEvent))
-    # print("nDarkHadrons", ak.sum(nDarkHadronsPerJet))
-    # print("total number of prongs: ", ak.sum(nDarkHadronsPerJet)*2)
-    # print("dark hadrons per jet", nDarkHadronsPerJet)
 
     # returns a weight per jet
     output = run_reweighting(mc_year, constituents, jets, nDarkHadronsPerJet, nProngsPerJet, nevts_tot, minPt = subjetMinPt)
